@@ -1,0 +1,1145 @@
+name: Build Haris APK v7
+on:
+  workflow_dispatch:
+    inputs:
+      api_key:
+        description: "Firebase apiKey (starts with AIza)"
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Generate project
+        env:
+          API_KEY: ${{ inputs.api_key }}
+        run: |
+          case "$API_KEY" in AIza*) ;; *) echo "apiKey must start with AIza"; exit 1;; esac
+          mkdir -p app/src/main/java/com/haris/guard app/src/main/res/xml
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "haris"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.haris.guard"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.haris.guardv7"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 7
+                  versionName = "7.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-feature android:name="android.hardware.camera" android:required="false"/>
+              <application
+                  android:label="حارس الهاتف v7"
+                  android:icon="@android:drawable/ic_lock_idle_lock"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <activity
+                      android:name=".LoginActivity"
+                      android:exported="false"
+                      android:windowSoftInputMode="adjustResize"/>
+                  <receiver
+                      android:name=".AdminReceiver"
+                      android:exported="true"
+                      android:permission="android.permission.BIND_DEVICE_ADMIN">
+                      <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin"/>
+                      <intent-filter>
+                          <action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/>
+                      </intent-filter>
+                  </receiver>
+                  <receiver
+                      android:name=".GuardReceiver"
+                      android:exported="false">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                          <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                      </intent-filter>
+                  </receiver>
+                  <service
+                      android:name=".GuardService"
+                      android:exported="false"
+                      android:foregroundServiceType="camera"/>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/xml/device_admin.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-policies>
+                  <watch-login/>
+              </uses-policies>
+          </device-admin>
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/FirebaseCfg.kt <<'EOF'
+          package com.haris.guard
+
+          object FirebaseCfg {
+              const val API_KEY = "__API_KEY__"
+              const val PROJECT = "hars-983d4"
+              const val DOCS = "https://firestore.googleapis.com/v1/projects/hars-983d4/databases/(default)/documents"
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/Ui.kt <<'EOF'
+          package com.haris.guard
+
+          import android.content.Context
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.text.InputType
+          import android.view.View
+          import android.view.ViewGroup
+          import android.widget.Button
+          import android.widget.EditText
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          object Ui {
+              val BG = 0xFF0B1220.toInt()
+              val CARD = 0xFF182235.toInt()
+              val ACCENT = 0xFF3B82F6.toInt()
+              val TEXT = 0xFFFFFFFF.toInt()
+              val MUTED = 0xFF94A3B8.toInt()
+
+              fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
+
+              private fun shape(color: Int, radius: Float): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(color)
+                  g.cornerRadius = radius
+                  return g
+              }
+
+              private fun lp(c: Context, top: Int): LinearLayout.LayoutParams {
+                  val p = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                  p.topMargin = dp(c, top)
+                  return p
+              }
+
+              fun page(c: Context): LinearLayout {
+                  val l = LinearLayout(c)
+                  l.orientation = LinearLayout.VERTICAL
+                  l.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  l.setPadding(dp(c, 20), dp(c, 48), dp(c, 20), dp(c, 32))
+                  l.setBackgroundColor(BG)
+                  return l
+              }
+
+              fun text(c: Context, t: String, color: Int, size: Float, top: Int = 8): TextView {
+                  val v = TextView(c)
+                  v.text = t
+                  v.setTextColor(color)
+                  v.textSize = size
+                  v.layoutParams = lp(c, top)
+                  return v
+              }
+
+              fun title(c: Context, t: String): TextView {
+                  val v = text(c, t, TEXT, 26f, 0)
+                  v.setTypeface(v.typeface, Typeface.BOLD)
+                  return v
+              }
+
+              fun section(c: Context, t: String): TextView {
+                  val v = text(c, t, TEXT, 18f, 28)
+                  v.setTypeface(v.typeface, Typeface.BOLD)
+                  return v
+              }
+
+              fun button(c: Context, t: String, primary: Boolean, onClick: () -> Unit): Button {
+                  val b = Button(c)
+                  b.text = t
+                  b.isAllCaps = false
+                  b.setTextColor(TEXT)
+                  b.textSize = 15f
+                  b.background = shape(if (primary) ACCENT else CARD, dp(c, 14).toFloat())
+                  b.layoutParams = lp(c, 12)
+                  b.setOnClickListener { onClick() }
+                  return b
+              }
+
+              fun input(c: Context, hint: String, password: Boolean, email: Boolean): EditText {
+                  val e = EditText(c)
+                  e.hint = hint
+                  e.setTextColor(TEXT)
+                  e.setHintTextColor(MUTED)
+                  e.setSingleLine(true)
+                  e.textDirection = View.TEXT_DIRECTION_LTR
+                  e.background = shape(CARD, dp(c, 12).toFloat())
+                  e.setPadding(dp(c, 16), dp(c, 14), dp(c, 16), dp(c, 14))
+                  e.inputType = when {
+                      password -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                      email -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                      else -> InputType.TYPE_CLASS_TEXT
+                  }
+                  e.layoutParams = lp(c, 12)
+                  return e
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/Auth.kt <<'EOF'
+          package com.haris.guard
+
+          import android.content.Context
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+
+          object Auth {
+              private fun prefs(c: Context) = c.getSharedPreferences("auth", Context.MODE_PRIVATE)
+
+              fun loggedIn(c: Context): Boolean = (prefs(c).getString("refresh", "") ?: "").isNotBlank()
+
+              fun email(c: Context): String = prefs(c).getString("email", "") ?: ""
+
+              fun uid(c: Context): String = prefs(c).getString("uid", "") ?: ""
+
+              fun logout(c: Context) {
+                  prefs(c).edit().clear().apply()
+              }
+
+              private fun post(url: String, body: String, type: String): Pair<Int, String> {
+                  val conn = URL(url).openConnection() as HttpURLConnection
+                  conn.connectTimeout = 15000
+                  conn.readTimeout = 15000
+                  conn.requestMethod = "POST"
+                  conn.doOutput = true
+                  conn.setRequestProperty("Content-Type", type)
+                  conn.outputStream.use { it.write(body.toByteArray()) }
+                  val code = conn.responseCode
+                  val s = if (code in 200..299) conn.inputStream else conn.errorStream
+                  val text = s?.bufferedReader()?.use { it.readText() } ?: ""
+                  return Pair(code, text)
+              }
+
+              private fun errorText(raw: String): String {
+                  val m = try {
+                      JSONObject(raw).getJSONObject("error").getString("message")
+                  } catch (e: Exception) {
+                      ""
+                  }
+                  return when {
+                      m.startsWith("EMAIL_EXISTS") -> "هذا البريد مسجّل من قبل، اضغط تسجيل الدخول"
+                      m.startsWith("WEAK_PASSWORD") -> "كلمة المرور ضعيفة، اكتب 6 أحرف أو أكثر"
+                      m.startsWith("INVALID_EMAIL") -> "صيغة البريد غير صحيحة"
+                      m.startsWith("EMAIL_NOT_FOUND") -> "هذا البريد غير مسجّل، اضغط إنشاء حساب جديد"
+                      m.startsWith("INVALID_PASSWORD") || m.startsWith("INVALID_LOGIN_CREDENTIALS") -> "البريد أو كلمة المرور غير صحيحة"
+                      m.startsWith("TOO_MANY_ATTEMPTS") -> "محاولات كثيرة، انتظر قليلًا ثم أعد المحاولة"
+                      m.startsWith("OPERATION_NOT_ALLOWED") -> "تسجيل البريد وكلمة المرور غير مفعّل في Firebase"
+                      m.contains("API key") -> "مفتاح Firebase (apiKey) غير صحيح"
+                      m.isBlank() -> "تعذّر الاتصال"
+                      else -> "خطأ: $m"
+                  }
+              }
+
+              private fun sign(c: Context, endpoint: String, email: String, pass: String): String {
+                  return try {
+                      val body = JSONObject()
+                          .put("email", email)
+                          .put("password", pass)
+                          .put("returnSecureToken", true)
+                          .toString()
+                      val r = post(
+                          "https://identitytoolkit.googleapis.com/v1/accounts:" + endpoint + "?key=" + FirebaseCfg.API_KEY,
+                          body,
+                          "application/json"
+                      )
+                      if (r.first != 200) return errorText(r.second)
+                      val j = JSONObject(r.second)
+                      val exp = System.currentTimeMillis() + j.getString("expiresIn").toLong() * 1000
+                      prefs(c).edit()
+                          .putString("id", j.getString("idToken"))
+                          .putString("refresh", j.getString("refreshToken"))
+                          .putString("uid", j.getString("localId"))
+                          .putString("email", email)
+                          .putLong("exp", exp)
+                          .apply()
+                      "ok"
+                  } catch (e: Exception) {
+                      "لا يوجد اتصال بالإنترنت"
+                  }
+              }
+
+              fun signIn(c: Context, email: String, pass: String): String = sign(c, "signInWithPassword", email, pass)
+
+              fun signUp(c: Context, email: String, pass: String): String = sign(c, "signUp", email, pass)
+
+              @Synchronized
+              fun token(c: Context): String {
+                  val p = prefs(c)
+                  val refresh = p.getString("refresh", "") ?: ""
+                  if (refresh.isBlank()) return ""
+                  if (System.currentTimeMillis() < p.getLong("exp", 0L) - 60000L) {
+                      return p.getString("id", "") ?: ""
+                  }
+                  return try {
+                      val body = "grant_type=refresh_token&refresh_token=" + URLEncoder.encode(refresh, "UTF-8")
+                      val r = post(
+                          "https://securetoken.googleapis.com/v1/token?key=" + FirebaseCfg.API_KEY,
+                          body,
+                          "application/x-www-form-urlencoded"
+                      )
+                      if (r.first != 200) return ""
+                      val j = JSONObject(r.second)
+                      val exp = System.currentTimeMillis() + j.getString("expires_in").toLong() * 1000
+                      p.edit()
+                          .putString("id", j.getString("id_token"))
+                          .putString("refresh", j.getString("refresh_token"))
+                          .putLong("exp", exp)
+                          .apply()
+                      j.getString("id_token")
+                  } catch (e: Exception) {
+                      ""
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/CloudStore.kt <<'EOF'
+          package com.haris.guard
+
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.util.Base64
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.io.ByteArrayOutputStream
+          import java.io.File
+          import java.net.HttpURLConnection
+          import java.net.URL
+
+          object CloudStore {
+              private fun post(url: String, token: String, body: String): Pair<Int, String> {
+                  val conn = URL(url).openConnection() as HttpURLConnection
+                  conn.connectTimeout = 20000
+                  conn.readTimeout = 30000
+                  conn.requestMethod = "POST"
+                  conn.doOutput = true
+                  conn.setRequestProperty("Content-Type", "application/json")
+                  conn.setRequestProperty("Authorization", "Bearer $token")
+                  conn.outputStream.use { it.write(body.toByteArray()) }
+                  val code = conn.responseCode
+                  val s = if (code in 200..299) conn.inputStream else conn.errorStream
+                  val text = s?.bufferedReader()?.use { it.readText() } ?: ""
+                  return Pair(code, text)
+              }
+
+              private fun small(f: File): ByteArray {
+                  val bmp = BitmapFactory.decodeFile(f.path) ?: return f.readBytes()
+                  val out = ByteArrayOutputStream()
+                  bmp.compress(Bitmap.CompressFormat.JPEG, 70, out)
+                  bmp.recycle()
+                  return out.toByteArray()
+              }
+
+              fun upload(c: Context, f: File, token: String): String {
+                  return try {
+                      val uid = Auth.uid(c)
+                      val b64 = Base64.encodeToString(small(f), Base64.NO_WRAP)
+                      val fields = JSONObject()
+                          .put("img", JSONObject().put("stringValue", b64))
+                          .put("time", JSONObject().put("integerValue", f.lastModified().toString()))
+                      val body = JSONObject().put("fields", fields).toString()
+                      val r = post(FirebaseCfg.DOCS + "/users/" + uid + "/photos", token, body)
+                      when (r.first) {
+                          200 -> "ok"
+                          401, 403 -> "لا توجد صلاحية، انشر قواعد Firestore أو أعد تسجيل الدخول"
+                          else -> "خطأ " + r.first
+                      }
+                  } catch (e: Exception) {
+                      "لا يوجد اتصال (" + e.javaClass.simpleName + ")"
+                  }
+              }
+
+              fun list(c: Context, token: String): List<Pair<Long, ByteArray>>? {
+                  return try {
+                      val uid = Auth.uid(c)
+                      val order = JSONObject()
+                          .put("field", JSONObject().put("fieldPath", "time"))
+                          .put("direction", "DESCENDING")
+                      val sq = JSONObject()
+                          .put("from", JSONArray().put(JSONObject().put("collectionId", "photos")))
+                          .put("orderBy", JSONArray().put(order))
+                          .put("limit", 20)
+                      val body = JSONObject().put("structuredQuery", sq).toString()
+                      val r = post(FirebaseCfg.DOCS + "/users/" + uid + ":runQuery", token, body)
+                      if (r.first != 200) return null
+                      val arr = JSONArray(r.second)
+                      val out = ArrayList<Pair<Long, ByteArray>>()
+                      for (i in 0 until arr.length()) {
+                          val d = arr.getJSONObject(i).optJSONObject("document") ?: continue
+                          val fl = d.getJSONObject("fields")
+                          val img = fl.getJSONObject("img").getString("stringValue")
+                          val t = fl.getJSONObject("time").getString("integerValue").toLong()
+                          out.add(Pair(t, Base64.decode(img, Base64.DEFAULT)))
+                      }
+                      out
+                  } catch (e: Exception) {
+                      null
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/Uploader.kt <<'EOF'
+          package com.haris.guard
+
+          import android.content.Context
+          import java.io.File
+
+          object Uploader {
+              private val lock = Any()
+              @Volatile private var lastMsg = ""
+
+              private fun logOnce(c: Context, m: String) {
+                  if (m != lastMsg) {
+                      lastMsg = m
+                      PhotoStore.log(c, m)
+                  }
+              }
+
+              fun pending(c: Context): Int =
+                  PhotoStore.dir(c).listFiles()?.count { it.name.startsWith("img_") } ?: 0
+
+              fun flush(c: Context) {
+                  Thread {
+                      synchronized(lock) {
+                          if (!Auth.loggedIn(c)) return@synchronized
+                          val files = PhotoStore.dir(c).listFiles()
+                              ?.filter { it.name.startsWith("img_") }
+                              ?.sortedBy { it.lastModified() }
+                              ?: return@synchronized
+                          if (files.isEmpty()) return@synchronized
+                          val t = Auth.token(c)
+                          if (t.isBlank()) {
+                              logOnce(c, "تعذّر تجديد الدخول، سجّل الدخول من جديد")
+                              return@synchronized
+                          }
+                          for (f in files) {
+                              val r = CloudStore.upload(c, f, t)
+                              if (r == "ok") {
+                                  f.renameTo(File(f.parentFile, "sent_" + f.name))
+                                  lastMsg = ""
+                                  PhotoStore.log(c, "رُفعت صورة إلى حسابك")
+                              } else {
+                                  logOnce(c, "فشل الرفع: $r")
+                                  break
+                              }
+                          }
+                      }
+                  }.start()
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/PhotoStore.kt <<'EOF'
+          package com.haris.guard
+
+          import android.content.Context
+          import java.io.File
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          object PhotoStore {
+              fun dir(c: Context): File = File(c.getExternalFilesDir(null), "intruders").also { it.mkdirs() }
+
+              fun log(c: Context, m: String) {
+                  try {
+                      val f = File(c.filesDir, "log.txt")
+                      if (f.exists() && f.length() > 20000) {
+                          f.writeText(f.readLines().takeLast(30).joinToString("\n") + "\n")
+                      }
+                      val t = SimpleDateFormat("HH:mm:ss dd/MM", Locale.US).format(Date())
+                      f.appendText("$t  $m\n")
+                  } catch (_: Exception) {}
+              }
+
+              fun lastLog(c: Context): String {
+                  val f = File(c.filesDir, "log.txt")
+                  return if (f.exists()) f.readLines().takeLast(8).joinToString("\n") else "(فارغ)"
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/AdminReceiver.kt <<'EOF'
+          package com.haris.guard
+
+          import android.app.admin.DeviceAdminReceiver
+          import android.content.Context
+          import android.content.Intent
+
+          class AdminReceiver : DeviceAdminReceiver() {
+              override fun onPasswordFailed(context: Context, intent: Intent) {
+                  PhotoStore.log(context, "محاولة فاشلة")
+                  val s = GuardService.instance
+                  if (s != null) s.capture() else PhotoStore.log(context, "الخدمة غير شغالة")
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/GuardService.kt <<'EOF'
+          package com.haris.guard
+
+          import android.annotation.SuppressLint
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.graphics.ImageFormat
+          import android.hardware.camera2.CameraCaptureSession
+          import android.hardware.camera2.CameraCharacteristics
+          import android.hardware.camera2.CameraDevice
+          import android.hardware.camera2.CameraManager
+          import android.hardware.camera2.CaptureRequest
+          import android.media.ImageReader
+          import android.os.Build
+          import android.os.Handler
+          import android.os.HandlerThread
+          import android.os.IBinder
+          import java.io.File
+
+          class GuardService : Service() {
+              companion object {
+                  @Volatile var instance: GuardService? = null
+              }
+
+              private val thread = HandlerThread("cam").also { it.start() }
+              private val handler = Handler(thread.looper)
+              @Volatile private var busy = false
+              private var gen = 0
+              private var camRef: CameraDevice? = null
+
+              private val tick = object : Runnable {
+                  override fun run() {
+                      Uploader.flush(applicationContext)
+                      handler.postDelayed(this, 60000)
+                  }
+              }
+
+              override fun onCreate() {
+                  super.onCreate()
+                  instance = this
+                  Watchdog.schedule(applicationContext)
+                  val nm = getSystemService(NotificationManager::class.java)
+                  nm.createNotificationChannel(NotificationChannel("guard", "Guard", NotificationManager.IMPORTANCE_LOW))
+                  val n = Notification.Builder(this, "guard")
+                      .setContentTitle("حارس الهاتف يعمل")
+                      .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                      .build()
+                  if (Build.VERSION.SDK_INT >= 30) {
+                      startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+                  } else {
+                      startForeground(1, n)
+                  }
+                  PhotoStore.log(this, "الحماية بدأت")
+                  handler.post(tick)
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+
+              override fun onTaskRemoved(rootIntent: Intent?) {
+                  Watchdog.schedule(applicationContext, 5000)
+              }
+
+              override fun onDestroy() {
+                  handler.removeCallbacks(tick)
+                  instance = null
+                  Watchdog.schedule(applicationContext, 30000)
+                  super.onDestroy()
+              }
+
+              private fun release() {
+                  try { camRef?.close() } catch (_: Exception) {}
+                  camRef = null
+                  busy = false
+              }
+
+              @SuppressLint("MissingPermission")
+              fun capture() {
+                  if (busy) return
+                  busy = true
+                  gen++
+                  val myGen = gen
+                  handler.post {
+                      try {
+                          val cm = getSystemService(CameraManager::class.java)
+                          val id = cm.cameraIdList.first {
+                              cm.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) ==
+                                  CameraCharacteristics.LENS_FACING_FRONT
+                          }
+                          val ch = cm.getCameraCharacteristics(id)
+                          val slow = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)?.minByOrNull { it.upper }
+                          val comp = ch.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+                          val reader = ImageReader.newInstance(640, 480, ImageFormat.JPEG, 2)
+                          var frames = 0
+                          reader.setOnImageAvailableListener({ r ->
+                              val img = r.acquireLatestImage()
+                              if (img != null) {
+                                  frames++
+                                  if (frames == 20 && myGen == gen) {
+                                      val b = img.planes[0].buffer
+                                      val bytes = ByteArray(b.remaining())
+                                      b.get(bytes)
+                                      File(PhotoStore.dir(this@GuardService), "img_${System.currentTimeMillis()}.jpg").writeBytes(bytes)
+                                      PhotoStore.log(this@GuardService, "تم حفظ صورة")
+                                      img.close()
+                                      release()
+                                      Uploader.flush(applicationContext)
+                                      return@setOnImageAvailableListener
+                                  }
+                                  img.close()
+                              }
+                          }, handler)
+                          cm.openCamera(id, object : CameraDevice.StateCallback() {
+                              override fun onOpened(c: CameraDevice) {
+                                  camRef = c
+                                  try {
+                                      val req = c.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                                      req.addTarget(reader.surface)
+                                      req.set(CaptureRequest.JPEG_ORIENTATION, 270)
+                                      if (slow != null) req.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, slow)
+                                      if (comp != null) req.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, comp.upper / 2)
+                                      @Suppress("DEPRECATION")
+                                      c.createCaptureSession(listOf(reader.surface), object : CameraCaptureSession.StateCallback() {
+                                          override fun onConfigured(s: CameraCaptureSession) {
+                                              try { s.setRepeatingRequest(req.build(), null, handler) }
+                                              catch (e: Exception) { PhotoStore.log(this@GuardService, "خطأ: $e"); release() }
+                                          }
+                                          override fun onConfigureFailed(s: CameraCaptureSession) {
+                                              PhotoStore.log(this@GuardService, "فشل إعداد الكاميرا")
+                                              release()
+                                          }
+                                      }, handler)
+                                  } catch (e: Exception) {
+                                      PhotoStore.log(this@GuardService, "خطأ: $e")
+                                      release()
+                                  }
+                              }
+                              override fun onDisconnected(c: CameraDevice) { release() }
+                              override fun onError(c: CameraDevice, e: Int) {
+                                  PhotoStore.log(this@GuardService, "خطأ كاميرا $e")
+                                  release()
+                              }
+                          }, handler)
+                          handler.postDelayed({
+                              if (busy && myGen == gen) {
+                                  PhotoStore.log(this@GuardService, "انتهت المهلة بدون صورة")
+                                  release()
+                              }
+                          }, 12000)
+                      } catch (e: Exception) {
+                          PhotoStore.log(this@GuardService, "خطأ: $e")
+                          release()
+                      }
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/Watchdog.kt <<'EOF'
+          package com.haris.guard
+          import android.app.AlarmManager          import android.app.PendingIntent          import android.content.Context          import android.content.Intent          import android.os.SystemClock
+          object Watchdog {              private const val INTERVAL = 15 * 60 * 1000L
+              private fun prefs(c: Context) = c.getSharedPreferences("guard", Context.MODE_PRIVATE)
+              fun enabled(c: Context): Boolean = prefs(c).getBoolean("enabled", false)
+              fun setEnabled(c: Context, v: Boolean) {                  prefs(c).edit().putBoolean("enabled", v).apply()              }
+              private fun pi(c: Context, code: Int): PendingIntent {                  val i = Intent(c, GuardReceiver::class.java).setAction("com.haris.guard.WATCHDOG")                  return PendingIntent.getBroadcast(c, code, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)              }
+              fun schedule(c: Context, delayMs: Long = 0L) {                  val am = c.getSystemService(AlarmManager::class.java)                  if (delayMs == 0L) {                      am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + INTERVAL, INTERVAL, pi(c, 1))                  } else {                      am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + delayMs, pi(c, 2))                  }              }
+              fun ensureRunning(c: Context) {                  if (!enabled(c) || GuardService.instance != null) return                  try {                      c.startForegroundService(Intent(c, GuardService::class.java))                  } catch (e: Exception) {                      PhotoStore.log(c, "تعذّر إعادة تشغيل الحماية: " + e.javaClass.simpleName)                  }              }          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/GuardReceiver.kt <<'EOF'
+          package com.haris.guard
+          import android.content.BroadcastReceiver          import android.content.Context          import android.content.Intent
+          class GuardReceiver : BroadcastReceiver() {              override fun onReceive(context: Context, intent: Intent?) {                  Watchdog.schedule(context)                  Watchdog.ensureRunning(context)              }          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/Invite.kt <<'EOF'
+          package com.haris.guard
+
+          import android.content.Context
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+
+          object Invite {
+              const val PROJECT = "hars-983d4"
+              const val API_KEY = ""
+              const val LINK = "https://github.com/Majedfdwe/haris-android/releases/download/v7/haris-v7.apk"
+              private const val BASE = "https://firestore.googleapis.com/v1/projects/$PROJECT/databases/(default)/documents"
+
+              private fun prefs(c: Context) = c.getSharedPreferences("invite", Context.MODE_PRIVATE)
+
+              fun myCode(c: Context): String {
+                  val p = prefs(c)
+                  var code = p.getString("code", "") ?: ""
+                  if (code.isBlank()) {
+                      val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+                      code = (1..6).map { chars.random() }.joinToString("")
+                      p.edit().putString("code", code).apply()
+                  }
+                  return code
+              }
+
+              fun invitedBy(c: Context): String = prefs(c).getString("by", "") ?: ""
+
+              private fun url(path: String, query: String = ""): URL {
+                  val key = if (API_KEY.isBlank()) "" else "key=$API_KEY"
+                  val q = listOf(query, key).filter { it.isNotBlank() }.joinToString("&")
+                  return URL(BASE + path + (if (q.isEmpty()) "" else "?$q"))
+              }
+
+              private fun call(u: URL, method: String, body: String?): Pair<Int, String> {
+                  val conn = u.openConnection() as HttpURLConnection
+                  conn.connectTimeout = 15000
+                  conn.readTimeout = 15000
+                  if (method == "PATCH") {
+                      conn.requestMethod = "POST"
+                      conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
+                  } else {
+                      conn.requestMethod = method
+                  }
+                  if (body != null) {
+                      conn.doOutput = true
+                      conn.setRequestProperty("Content-Type", "application/json")
+                      conn.outputStream.use { it.write(body.toByteArray()) }
+                  }
+                  val status = conn.responseCode
+                  val stream = if (status in 200..299) conn.inputStream else conn.errorStream
+                  val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                  return Pair(status, text)
+              }
+
+              private fun inviterBody(value: String): String {
+                  val fields = JSONObject().put("inviter", JSONObject().put("stringValue", value))
+                  return JSONObject().put("fields", fields).toString()
+              }
+
+              fun register(c: Context): String {
+                  return try {
+                      val p = prefs(c)
+                      if (p.getBoolean("reg", false)) return "ok"
+                      val fields = JSONObject()
+                          .put("inviter", JSONObject().put("stringValue", ""))
+                          .put("created", JSONObject().put("integerValue", System.currentTimeMillis().toString()))
+                      val body = JSONObject().put("fields", fields).toString()
+                      val r = call(url("/members", "documentId=" + myCode(c)), "POST", body)
+                      if (r.first == 200 || r.first == 409) {
+                          p.edit().putBoolean("reg", true).apply()
+                          "ok"
+                      } else {
+                          "تعذّر التسجيل (" + r.first + ")"
+                      }
+                  } catch (e: Exception) {
+                      "لا يوجد اتصال"
+                  }
+              }
+
+              fun claim(c: Context, raw: String): String {
+                  return try {
+                      val code = raw.trim().uppercase()
+                      if (code.length != 6) return "الرمز يجب أن يكون 6 خانات"
+                      if (code == myCode(c)) return "لا يمكنك استخدام رمزك أنت"
+                      if (invitedBy(c).isNotBlank()) return "سجّلت رمز دعوة من قبل"
+                      val reg = register(c)
+                      if (reg != "ok") return reg
+                      val g = call(url("/members/" + code), "GET", null)
+                      if (g.first == 404) return "هذا الرمز غير موجود"
+                      if (g.first != 200) return "تعذّر التحقق (" + g.first + ")"
+                      val r = call(url("/members/" + myCode(c), "updateMask.fieldPaths=inviter"), "PATCH", inviterBody(code))
+                      if (r.first == 200) {
+                          prefs(c).edit().putString("by", code).apply()
+                          "تم تسجيل رمز الدعوة"
+                      } else {
+                          "تعذّر التسجيل (" + r.first + ")"
+                      }
+                  } catch (e: Exception) {
+                      "لا يوجد اتصال"
+                  }
+              }
+
+              fun count(c: Context): String {
+                  return try {
+                      register(c)
+                      val value = JSONObject().put("stringValue", myCode(c))
+                      val filter = JSONObject()
+                          .put("field", JSONObject().put("fieldPath", "inviter"))
+                          .put("op", "EQUAL")
+                          .put("value", value)
+                      val sq = JSONObject()
+                          .put("from", JSONArray().put(JSONObject().put("collectionId", "members")))
+                          .put("where", JSONObject().put("fieldFilter", filter))
+                      val agg = JSONArray().put(JSONObject().put("alias", "n").put("count", JSONObject()))
+                      val q = JSONObject().put(
+                          "structuredAggregationQuery",
+                          JSONObject().put("structuredQuery", sq).put("aggregations", agg)
+                      )
+                      val r = call(url(":runAggregationQuery"), "POST", q.toString())
+                      if (r.first != 200) return "تعذّر (" + r.first + ")"
+                      JSONArray(r.second).getJSONObject(0).getJSONObject("result")
+                          .getJSONObject("aggregateFields").getJSONObject("n").getString("integerValue")
+                  } catch (e: Exception) {
+                      "لا يوجد اتصال"
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/About.kt <<'EOF'
+          package com.haris.guard
+
+          object About {
+              const val TITLE = "عن المطوّر"
+              const val TEXT = "ماجد أبو سيدرا\n\nمطوّر تطبيقات عربية للهواتف، يبني تطبيقاته بنفسه من هاتفه.\n\nصُمّم «حارس الهاتف» ليلتقط صورة لمن يحاول فتح هاتفك برمز خاطئ ويرفعها إلى حسابك أنت. الصور مرتبطة ببريدك وكلمة مرورك، ولا يراها أحد غيرك، وتستطيع مشاهدتها من أي هاتف بتسجيل الدخول."
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/LoginActivity.kt <<'EOF'
+          package com.haris.guard
+
+          import android.app.Activity
+          import android.content.Intent
+          import android.os.Bundle
+          import android.widget.EditText
+          import android.widget.ScrollView
+          import android.widget.TextView
+
+          class LoginActivity : Activity() {
+              private lateinit var email: EditText
+              private lateinit var pass: EditText
+              private lateinit var msg: TextView
+
+              override fun onCreate(b: Bundle?) {
+                  super.onCreate(b)
+                  val root = Ui.page(this)
+                  root.addView(Ui.title(this, "حارس الهاتف"))
+                  root.addView(Ui.text(this, "سجّل الدخول لتصلك صورة من يحاول فتح هاتفك برمز خاطئ، وتراها من أي هاتف.", Ui.MUTED, 14f, 12))
+                  email = Ui.input(this, "البريد الإلكتروني", false, true)
+                  pass = Ui.input(this, "كلمة المرور (6 أحرف أو أكثر)", true, false)
+                  root.addView(email)
+                  root.addView(pass)
+                  root.addView(Ui.button(this, "تسجيل الدخول", true) { go(false) })
+                  root.addView(Ui.button(this, "إنشاء حساب جديد", false) { go(true) })
+                  msg = Ui.text(this, "", Ui.MUTED, 14f, 16)
+                  root.addView(msg)
+                  val sv = ScrollView(this)
+                  sv.setBackgroundColor(Ui.BG)
+                  sv.isFillViewport = true
+                  sv.addView(root)
+                  setContentView(sv)
+              }
+
+              private fun go(create: Boolean) {
+                  val e = email.text.toString().trim()
+                  val p = pass.text.toString()
+                  if (e.isBlank() || p.isBlank()) {
+                      msg.text = "اكتب البريد وكلمة المرور"
+                      return
+                  }
+                  msg.text = "جارٍ الاتصال..."
+                  val ctx = applicationContext
+                  Thread {
+                      val r = if (create) Auth.signUp(ctx, e, p) else Auth.signIn(ctx, e, p)
+                      runOnUiThread {
+                          if (r == "ok") {
+                              startActivity(Intent(this, MainActivity::class.java))
+                              finish()
+                          } else {
+                              msg.text = r
+                          }
+                      }
+                  }.start()
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/haris/guard/MainActivity.kt <<'EOF'
+          package com.haris.guard
+
+          import android.Manifest
+          import android.app.Activity
+          import android.app.AlertDialog
+          import android.app.admin.DevicePolicyManager
+          import android.content.ComponentName
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.BitmapFactory
+          import android.os.Build
+          import android.os.Bundle
+          import android.widget.EditText
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : Activity() {
+              private lateinit var status: TextView
+              private lateinit var list: LinearLayout
+              private lateinit var inviterBox: EditText
+              private lateinit var inviteInfo: TextView
+
+              private fun comp() = ComponentName(this, AdminReceiver::class.java)
+
+              override fun onCreate(b: Bundle?) {
+                  super.onCreate(b)
+                  if (!Auth.loggedIn(this)) {
+                      startActivity(Intent(this, LoginActivity::class.java))
+                      finish()
+                      return
+                  }
+                  val root = Ui.page(this)
+                  root.addView(Ui.title(this, "حارس الهاتف"))
+                  root.addView(Ui.text(this, "الحساب: " + Auth.email(this), Ui.MUTED, 14f, 6))
+                  status = Ui.text(this, "", 0xFFCBD5E1.toInt(), 14f, 16)
+                  root.addView(status)
+
+                  root.addView(Ui.button(this, "1. تفعيل صلاحية المراقبة", true) { askAdmin() })
+                  root.addView(Ui.button(this, "2. تشغيل الحماية", true) { start() })
+                  root.addView(Ui.button(this, "تحديث", false) { refresh() })
+
+                  root.addView(Ui.section(this, "ادعُ أصدقاءك"))
+                  inviteInfo = Ui.text(this, "رمز دعوتك: " + Invite.myCode(this), 0xFFCBD5E1.toInt(), 14f, 6)
+                  root.addView(inviteInfo)
+                  root.addView(Ui.button(this, "مشاركة رابط التطبيق", false) { shareInvite() })
+                  root.addView(Ui.button(this, "تحديث عدد المسجّلين", false) { showCount() })
+                  inviterBox = Ui.input(this, "رمز دعوة من صديق (اختياري)", false, false)
+                  root.addView(inviterBox)
+                  root.addView(Ui.button(this, "تسجيل رمز الدعوة", false) { claimCode() })
+
+                  root.addView(Ui.button(this, "عن المطوّر", false) { showAbout() })
+                  root.addView(Ui.button(this, "تسجيل الخروج", false) { logout() })
+
+                  root.addView(Ui.section(this, "الصور"))
+                  list = LinearLayout(this)
+                  list.orientation = LinearLayout.VERTICAL
+                  root.addView(list)
+
+                  val sv = ScrollView(this)
+                  sv.setBackgroundColor(Ui.BG)
+                  sv.addView(root)
+                  setContentView(sv)
+              }
+
+              private fun logout() {
+                  AlertDialog.Builder(this)
+                      .setTitle("تسجيل الخروج")
+                      .setMessage("ستتوقف الحماية على هذا الهاتف حتى تسجّل الدخول من جديد.")
+                      .setPositiveButton("خروج") { _, _ ->
+                          Watchdog.setEnabled(this, false)
+                          stopService(Intent(this, GuardService::class.java))
+                          Auth.logout(this)
+                          startActivity(Intent(this, LoginActivity::class.java))
+                          finish()
+                      }
+                      .setNegativeButton("إلغاء", null)
+                      .show()
+              }
+
+              private fun shareInvite() {
+                  val i = Intent(Intent.ACTION_SEND)
+                  i.type = "text/plain"
+                  i.putExtra(
+                      Intent.EXTRA_TEXT,
+                      "جرّب تطبيق حارس الهاتف، يصوّر من يحاول فتح هاتفك برمز خاطئ ويرفع الصورة إلى حسابك:\n" +
+                          Invite.LINK + "\nرمز دعوتي: " + Invite.myCode(this) + "\nثبّت التطبيق ثم أنشئ حسابًا ببريدك وكلمة مرور."
+                  )
+                  startActivity(Intent.createChooser(i, "مشاركة"))
+              }
+
+              private fun showCount() {
+                  val ctx = applicationContext
+                  Thread {
+                      val n = Invite.count(ctx)
+                      runOnUiThread {
+                          inviteInfo.text = "رمز دعوتك: " + Invite.myCode(ctx) + "\nعدد من سجّلوا برمزك: " + n
+                      }
+                  }.start()
+              }
+
+              private fun claimCode() {
+                  val ctx = applicationContext
+                  val code = inviterBox.text.toString()
+                  Thread {
+                      val r = Invite.claim(ctx, code)
+                      runOnUiThread {
+                          Toast.makeText(this, r, Toast.LENGTH_LONG).show()
+                          if (r.startsWith("تم")) inviterBox.setText("")
+                      }
+                  }.start()
+              }
+
+              private fun showAbout() {
+                  AlertDialog.Builder(this)
+                      .setTitle(About.TITLE)
+                      .setMessage(About.TEXT)
+                      .setPositiveButton("إغلاق", null)
+                      .show()
+              }
+
+              private fun askAdmin() {
+                  val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                  i.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, comp())
+                  i.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "لالتقاط صورة عند إدخال رمز قفل خاطئ")
+                  startActivity(i)
+              }
+
+              private fun start() {
+                  val need = mutableListOf(Manifest.permission.CAMERA)
+                  if (Build.VERSION.SDK_INT >= 33) need.add(Manifest.permission.POST_NOTIFICATIONS)
+                  if (need.any { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }) {
+                      requestPermissions(need.toTypedArray(), 1)
+                  } else {
+                      launch()
+                  }
+              }
+
+              private fun launch() {
+                  Watchdog.setEnabled(this, true)
+                  Watchdog.schedule(applicationContext)
+                  startForegroundService(Intent(this, GuardService::class.java))
+                  refresh()
+              }
+
+              override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, r: IntArray) {
+                  super.onRequestPermissionsResult(rc, p, r)
+                  if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launch()
+              }
+
+              private fun refresh() {
+                  if (!::status.isInitialized) return
+                  val dpm = getSystemService(DevicePolicyManager::class.java)
+                  val admin = dpm.isAdminActive(comp())
+                  val on = GuardService.instance != null
+                  status.text = "صلاحية المراقبة: " + (if (admin) "مفعّلة" else "غير مفعّلة") +
+                      "\nالحماية: " + (if (on) "تعمل" else "متوقفة") +
+                      "\nصور بانتظار الرفع: " + Uploader.pending(this) +
+                      "\n\nالسجل:\n" + PhotoStore.lastLog(this)
+                  val ctx = applicationContext
+                  Thread {
+                      val t = Auth.token(ctx)
+                      val cloud = if (t.isBlank()) null else CloudStore.list(ctx, t)
+                      runOnUiThread { showPhotos(cloud) }
+                  }.start()
+              }
+
+              private fun addPhoto(bytes: ByteArray?, path: String?, time: Long) {
+                  val o = BitmapFactory.Options()
+                  o.inSampleSize = 2
+                  val bmp = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o) else BitmapFactory.decodeFile(path, o)
+                  if (bmp == null) return
+                  val label = Ui.text(this, SimpleDateFormat("HH:mm  dd/MM/yyyy", Locale.US).format(Date(time)), Ui.MUTED, 13f, 20)
+                  list.addView(label)
+                  val iv = ImageView(this)
+                  iv.setImageBitmap(bmp)
+                  iv.adjustViewBounds = true
+                  iv.setPadding(0, 8, 0, 0)
+                  list.addView(iv)
+              }
+
+              private fun showPhotos(cloud: List<Pair<Long, ByteArray>>?) {
+                  list.removeAllViews()
+                  if (cloud != null) {
+                      if (cloud.isEmpty()) list.addView(Ui.text(this, "لا توجد صور في حسابك بعد", Ui.MUTED, 14f, 8))
+                      for (p in cloud) addPhoto(p.second, null, p.first)
+                  } else {
+                      list.addView(Ui.text(this, "تعذّر الاتصال بالحساب، هذه الصور المحفوظة في الهاتف:", Ui.MUTED, 14f, 8))
+                      val files = PhotoStore.dir(this).listFiles()?.sortedByDescending { it.lastModified() }?.take(10)
+                      files?.forEach { addPhoto(null, it.path, it.lastModified()) }
+                  }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  if (!::status.isInitialized) return
+                  refresh()
+                  Uploader.flush(applicationContext)
+                  showCount()
+              }
+          }
+          EOF
+
+          sed -i "s|__API_KEY__|${API_KEY}|" app/src/main/java/com/haris/guard/FirebaseCfg.kt
+      - name: Fixed signing key
+        run: |
+          mkdir -p ~/.android
+          echo "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" | base64 -d > ~/.android/debug.keystore
+      - name: Build
+        run: gradle assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haris-v7-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk haris-v7.apk
+          gh release delete v7 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create v7 haris-v7.apk --repo "$GITHUB_REPOSITORY" --title "Haris v7" --notes "Haris Phone v7" --latest
