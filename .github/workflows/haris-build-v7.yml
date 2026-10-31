@@ -770,7 +770,7 @@ jobs:
           object Invite {
               const val PROJECT = "hars-983d4"
               const val API_KEY = ""
-              const val LINK = "https://github.com/Majedfdwe/haris-android/releases/download/v7/haris-v7.apk"
+              const val LINK = "https://github.com/majedalejil-bit/haris-v7/releases/download/v7/haris-v7.apk"
               private const val BASE = "https://firestore.googleapis.com/v1/projects/$PROJECT/databases/(default)/documents"
 
               private fun prefs(c: Context) = c.getSharedPreferences("invite", Context.MODE_PRIVATE)
