@@ -1276,3 +1276,6 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk haris.apk
           gh release delete "v$VC" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create "v$VC" haris.apk --repo "$GITHUB_REPOSITORY" --title "حارس الهاتف v$VC" --notes "حارس الهاتف — الإصدار $VC" --latest
+          cp haris.apk haris-v7.apk
+          gh release upload v7 haris-v7.apk --clobber --repo "$GITHUB_REPOSITORY" || true
+          gh release edit "v$VC" --latest --repo "$GITHUB_REPOSITORY" || true
