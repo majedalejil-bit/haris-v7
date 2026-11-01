@@ -60,6 +60,20 @@ jobs:
                   targetCompatibility = JavaVersion.VERSION_17
               }
               kotlinOptions { jvmTarget = "17" }
+              signingConfigs {
+                  create("fixed") {
+                      storeFile = file("haris.keystore")
+                      storePassword = System.getenv("KS_PASS")
+                      keyAlias = "haris"
+                      keyPassword = System.getenv("KS_PASS")
+                  }
+              }
+              buildTypes {
+                  getByName("debug") {
+                      signingConfig = signingConfigs.getByName("fixed")
+                      isDebuggable = false
+                  }
+              }
           }
           EOF
 
@@ -1240,11 +1254,15 @@ jobs:
           sed -i "s|__VC__|$VC|" app/src/main/java/com/haris/guard/Updater.kt
 
           sed -i "s|__API_KEY__|${API_KEY}|" app/src/main/java/com/haris/guard/FirebaseCfg.kt
-      - name: Fixed signing key
+      - name: Fixed signing key (from secrets)
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}
         run: |
-          mkdir -p ~/.android
-          echo "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" | base64 -d > ~/.android/debug.keystore
+          if [ -z "$KS_B64" ]; then echo "Secret KEYSTORE_B64 is missing"; exit 1; fi
+          echo "$KS_B64" | base64 -d > app/haris.keystore
       - name: Build
+        env:
+          KS_PASS: ${{ secrets.KEYSTORE_PASS }}
         run: gradle assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
