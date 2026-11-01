@@ -1,0 +1,6 @@
+build/
+.gradle/
+app/build/
+app/haris.keystore
+local.properties
+*.apk
