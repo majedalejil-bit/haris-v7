@@ -35,7 +35,13 @@ object Uploader {
                     return@synchronized
                 }
                 for (f in files) {
-                    val loc = PhotoStore.readLoc(f)
+                    var loc = PhotoStore.readLoc(f)
+                    if (loc == null && System.currentTimeMillis() - f.lastModified() < 10 * 60 * 1000L) {
+                        val k = LocationHelper.lastKnown(c)
+                        if (k != null && Math.abs(f.lastModified() - k.time) < 30 * 60 * 1000L) {
+                            loc = doubleArrayOf(k.latitude, k.longitude, k.accuracy.toDouble())
+                        }
+                    }
                     val r = CloudStore.upload(c, f, t, loc)
                     if (r == "ok") {
                         val m = Mailer.send(c, t, f, loc)

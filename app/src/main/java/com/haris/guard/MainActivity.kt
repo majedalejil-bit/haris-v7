@@ -55,6 +55,7 @@ class MainActivity : Activity() {
         root.addView(Ui.button(this, "تسجيل رمز الدعوة", false) { claimCode() })
 
         root.addView(Ui.section(this, "تنبيهات ومتابعة"))
+        root.addView(Ui.button(this, "إعدادات الموقع", false) { fixLocation() })
         if (Mailer.available()) {
             mailBtn = Ui.button(this, mailLabel(), false) { toggleMail() }
             root.addView(mailBtn)
@@ -176,6 +177,10 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, r: IntArray) {
         super.onRequestPermissionsResult(rc, p, r)
+        if (rc == 2) {
+            if (Watchdog.enabled(this)) launch() else refresh()
+            return
+        }
         if (Build.VERSION.SDK_INT < 23 || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launch()
     }
 
@@ -186,6 +191,7 @@ class MainActivity : Activity() {
         val on = GuardService.instance != null
         status.text = "صلاحية المراقبة: " + (if (admin) "مفعّلة" else "غير مفعّلة") +
             "\nالحماية: " + (if (on) "تعمل" else "متوقفة") +
+            "\nالموقع: " + LocationHelper.status(this) +
             "\nصور بانتظار الرفع: " + Uploader.pending(this) +
             "\n\nالسجل:\n" + PhotoStore.lastLog(this)
         val ctx = applicationContext
@@ -203,6 +209,20 @@ class MainActivity : Activity() {
     private fun toggleMail() {
         Mailer.setEnabled(this, !Mailer.enabled(this))
         mailBtn?.text = mailLabel()
+    }
+
+    private fun fixLocation() {
+        if (!LocationHelper.granted(this)) {
+            if (Build.VERSION.SDK_INT >= 23) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 2)
+            }
+            return
+        }
+        if (!LocationHelper.deviceOn(this)) {
+            try { startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } catch (_: Exception) {}
+            return
+        }
+        Toast.makeText(this, "الموقع يعمل", Toast.LENGTH_SHORT).show()
     }
 
     private fun openUrl(u: String) {

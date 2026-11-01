@@ -63,6 +63,7 @@ class GuardService : Service() {
             return
         }
         Alerts.clear(applicationContext)
+        LocationHelper.startTracking(applicationContext)
         PhotoStore.log(this, "الحماية بدأت")
         handler.post(tick)
     }
@@ -87,7 +88,10 @@ class GuardService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (instance != null) goForeground()
+        if (instance != null) {
+            goForeground()
+            LocationHelper.startTracking(applicationContext)
+        }
         return START_STICKY
     }
 
@@ -97,12 +101,13 @@ class GuardService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tick)
+        LocationHelper.stopTracking(applicationContext)
         instance = null
         Watchdog.schedule(applicationContext, 30000)
         super.onDestroy()
     }
 
-    private fun saveShot(raw: ByteArray) {
+    private fun saveShot(raw: List<ByteArray>) {
         val ctx = applicationContext
         val t = System.currentTimeMillis()
         val wait = File(PhotoStore.dir(ctx), "wait_$t.jpg")
@@ -150,18 +155,22 @@ class GuardService : Service() {
                     ?: Size(640, 480)
                 val reader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
                 var frames = 0
+                val shots = ArrayList<ByteArray>()
                 reader.setOnImageAvailableListener({ r ->
                     val img = r.acquireLatestImage()
                     if (img != null) {
                         frames++
-                        if (frames == 20 && myGen == gen) {
+                        if (frames >= 17 && myGen == gen && busy) {
                             val b = img.planes[0].buffer
                             val bytes = ByteArray(b.remaining())
                             b.get(bytes)
-                            img.close()
-                            release()
-                            saveShot(bytes)
-                            return@setOnImageAvailableListener
+                            shots.add(bytes)
+                            if (shots.size >= 4) {
+                                img.close()
+                                release()
+                                saveShot(ArrayList(shots))
+                                return@setOnImageAvailableListener
+                            }
                         }
                         img.close()
                     }
@@ -199,8 +208,13 @@ class GuardService : Service() {
                 }, handler)
                 handler.postDelayed({
                     if (busy && myGen == gen) {
-                        PhotoStore.log(this@GuardService, "انتهت المهلة بدون صورة")
-                        release()
+                        if (shots.isNotEmpty()) {
+                            release()
+                            saveShot(ArrayList(shots))
+                        } else {
+                            PhotoStore.log(this@GuardService, "انتهت المهلة بدون صورة")
+                            release()
+                        }
                     }
                 }, 12000)
             } catch (e: Exception) {
