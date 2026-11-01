@@ -86,7 +86,7 @@ object PhotoEnhance {
             // ---- 3. smooth colour noise strongly, light level gently ----
             val cr2 = if (dark) blur(cr, w, h, max(2, w / 110)) else cr
             val cb2 = if (dark) blur(cb, w, h, max(2, w / 110)) else cb
-            val y2 = if (mean < 70) blur(y, w, h, 1) else y
+            val y2 = if (mean < 70) blur(y, w, h, 2) else if (mean < 115) blur(y, w, h, 1) else y
 
             // ---- 4. brighten light level only ----
             val lut = IntArray(256) { it }
@@ -94,7 +94,7 @@ object PhotoEnhance {
             if (mean < 115) {
                 var low = 0
                 var acc = 0
-                while (low < 255 && acc + hist[low] < n * 0.01) { acc += hist[low]; low++ }
+                while (low < 255 && acc + hist[low] < n * 0.002) { acc += hist[low]; low++ }
                 var high = 255
                 acc = 0
                 while (high > 0 && acc + hist[high] < n * 0.003) { acc += hist[high]; high-- }
@@ -103,7 +103,7 @@ object PhotoEnhance {
                 val gamma = clampD(ln(0.42) / ln(sm), 0.5, 1.0)
                 for (v in 0..255) {
                     val s = clampD((v - low).toDouble() / (high - low), 0.0, 1.0)
-                    lut[v] = (255.0 * s.pow(gamma)).toInt().coerceIn(0, 255)
+                    lut[v] = (14.0 + 241.0 * s.pow(gamma)).toInt().coerceIn(0, 255)
                 }
                 sat = if (mean < 40) 0.7 else 0.85
             }
@@ -111,8 +111,10 @@ object PhotoEnhance {
             val out = IntArray(n)
             for (i in 0 until n) {
                 val yy = lut[y2[i]].toDouble()
-                val b = cb2[i] * sat
-                val r = cr2[i] * sat
+                // very dark pixels: colour is only noise there
+                val k = if (yy < 40) sat * yy / 40.0 else sat
+                val b = cb2[i] * k
+                val r = cr2[i] * k
                 val rr = (yy + 1.403 * r).toInt().coerceIn(0, 255)
                 val gg2 = (yy - 0.344 * b - 0.714 * r).toInt().coerceIn(0, 255)
                 val bb = (yy + 1.773 * b).toInt().coerceIn(0, 255)
