@@ -11,11 +11,13 @@ import java.net.URL
 object Updater {
     const val VERSION = 9
     private const val API = "https://api.github.com/repos/majedalejil-bit/haris-v7/releases/latest"
-    @Volatile private var checked = false
+    @Volatile private var lastCheck = 0L
 
+    // checks at most every 20 minutes (the app process stays alive because of protection)
     fun check(a: Activity) {
-        if (checked) return
-        checked = true
+        val now = System.currentTimeMillis()
+        if (now - lastCheck < 20 * 60 * 1000L) return
+        lastCheck = now
         Thread {
             try {
                 val c = URL(API).openConnection() as HttpURLConnection

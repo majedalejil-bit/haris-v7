@@ -14,7 +14,14 @@ object Invite {
 
     private fun prefs(c: Context) = c.getSharedPreferences("invite", Context.MODE_PRIVATE)
 
+    // The code is derived from the account, so it never changes (reinstall, new phone...)
     fun myCode(c: Context): String {
+        val uid = Auth.uid(c)
+        if (uid.isNotBlank()) {
+            val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+            val d = java.security.MessageDigest.getInstance("SHA-256").digest(("haris:" + uid).toByteArray())
+            return (0 until 6).map { chars[(d[it].toInt() and 0xFF) % chars.length] }.joinToString("")
+        }
         val p = prefs(c)
         var code = p.getString("code", "") ?: ""
         if (code.isBlank()) {
@@ -62,14 +69,14 @@ object Invite {
     fun register(c: Context): String {
         return try {
             val p = prefs(c)
-            if (p.getBoolean("reg", false)) return "ok"
+            if (p.getString("regcode", "") == myCode(c)) return "ok"
             val fields = JSONObject()
                 .put("inviter", JSONObject().put("stringValue", ""))
                 .put("created", JSONObject().put("integerValue", System.currentTimeMillis().toString()))
             val body = JSONObject().put("fields", fields).toString()
             val r = call(url("/members", "documentId=" + myCode(c)), "POST", body)
             if (r.first == 200 || r.first == 409) {
-                p.edit().putBoolean("reg", true).apply()
+                p.edit().putString("regcode", myCode(c)).apply()
                 "ok"
             } else {
                 "تعذّر التسجيل (" + r.first + ")"
